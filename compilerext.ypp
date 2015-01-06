@@ -1,0 +1,136 @@
+%{
+#include <iostream>
+#include <string>
+#include "programext.h"
+using namespace std;
+void yyerror (const char *error);
+extern "C"
+{
+        int yyparse(void);
+        int yylex(void);
+        int yywrap()
+        {
+                return 1;
+        }
+
+}
+StmtList *SL;
+list<string> *PL;
+list<Expr*> *EL;
+Program *P;
+RALProgram *R;
+%}
+%union {
+  int       value;  /* For the lexical analyser. NUMBER tokens */
+  char      *ident;  /* For the lexical analyser. IDENT tokens */
+  Expr      *exprptr;
+  Stmt      *stmtptr;
+  StmtList  *stmtlistptr;
+  list<string> *paramlistptr;
+  list<Expr*> *exprlistptr;
+}
+
+
+
+%token <ident> IDENT
+%token <value> NUMBER
+%token ASSIGNOP
+%token DEFINE
+%token IF
+%token THEN
+%token ELSE
+%token FI
+%token WHILE
+%token DO
+%token OD
+%token PROC
+%token END
+%type <exprptr> expr
+%type <exprptr> term
+%type <exprptr> factor
+%type <exprptr> funcall
+%type <stmtptr> stmt
+%type <stmtptr> assign_stmt
+%type <stmtptr> define_stmt
+%type <stmtptr> if_stmt
+%type <stmtptr> while_stmt
+%type <stmtlistptr> stmt_list
+%type <paramlistptr> param_list
+%type <exprlistptr> expr_list
+
+%%
+
+
+program: stmt_list { P = new Program($1);  
+                     cout << "Compiling Program" << endl;
+
+                     R = P->compile();
+                     R->output();
+                     cout << endl;
+                     R->dump();
+                   }
+       ;
+
+stmt_list:  stmt ';' stmt_list { $3->insert($1); $$ = $3; }
+        |   stmt  { SL = new StmtList();  SL->insert($1); $$ = SL; }
+        ;
+
+stmt:  assign_stmt { $$ = $1; }
+    |  define_stmt { $$ = $1; }
+    |  if_stmt { $$ = $1; }
+    |  while_stmt { $$ = $1; }
+    ;
+
+assign_stmt: IDENT ASSIGNOP expr 
+                    { $$ = new AssignStmt(string($1),$3); }
+           ;
+
+define_stmt: DEFINE IDENT PROC '(' param_list ')' stmt_list END
+								{ $$ = new DefineStmt( string($2), new Proc($5,$7) ); }
+           ;
+
+
+if_stmt: IF expr THEN stmt_list ELSE stmt_list FI
+           { $$ = new IfStmt($2,$4,$6); }
+           ;
+
+while_stmt: WHILE expr DO stmt_list OD
+           { $$ = new WhileStmt($2,$4); }
+           ;
+
+param_list: IDENT ',' param_list { $3->push_front(string($1)); $$ = $3; }
+    |      IDENT { PL = new list<string>;  PL->push_front(string($1)); 
+                   $$ = PL; }
+
+expr: expr '+' term   { $$ = (new Plus($1,$3))->simplify(); }
+    | expr '-' term   { $$ = (new Minus($1,$3))->simplify(); }
+    | term            { $$ = $1; }
+    ;
+
+term: term '*' factor   { $$ = (new Times($1,$3))->simplify(); }
+    | factor            { $$ = $1; }
+    ;
+
+factor:     '(' expr ')'  { $$ = $2; }
+    |       NUMBER { $$ = new Number($1); }
+    |       IDENT { $$ = new Ident(string($1)); }
+    |       funcall { $$ = $1; }
+    ;
+
+funcall:  IDENT '(' expr_list ')'
+         { $$ = new FunCall(string($1),$3); }
+
+expr_list: expr ',' expr_list { $3->push_front($1);  $$ = $3; }
+    |      expr { EL = new list<Expr*>;  EL->push_front($1); $$ = EL; }
+%%
+
+int main()
+{
+cout << "Translating Program" << endl;
+return yyparse();
+}
+
+void yyerror (const char *error)
+{
+  cout << error << endl;
+}
